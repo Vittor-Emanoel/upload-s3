@@ -1,6 +1,10 @@
-import { PutObjectCommand } from "@aws-sdk/client-s3";
-import { fileKey, s3Client } from "./utils";
+import { DynamoDBClient, PutItemCommand } from "@aws-sdk/client-dynamodb";
+import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { randomUUID } from "node:crypto";
+
+const s3Client = new S3Client();
+const dynamoClient = new DynamoDBClient();
 
 export async function handler(event) {
   const { fileName } = JSON.parse(event.body);
@@ -14,12 +18,23 @@ export async function handler(event) {
     };
   }
 
+  const fileKey = `${randomUUID()}-${fileName}`;
+
   const s3command = new PutObjectCommand({
-    Bucket: "nome do bucket",
-    Key: `${fileKey}-${fileName}`,
+    Bucket: "adwwad",
+    Key: fileKey,
   });
 
-  const signedUrl = getSignedUrl(s3Client, s3command, { expiresIn: 60 }); //60 seconds
+  const dynamoCommand = new PutItemCommand({
+    TableName: "awdawdaw",
+    Item: {
+      fileKey: { S: fileKey },
+      originalFileName: { S: fileName },
+    },
+  });
+
+  const signedUrl = await getSignedUrl(s3Client, s3command, { expiresIn: 60 }); //60 seconds
+  await dynamoClient.send(dynamoCommand);
 
   return {
     statusCode: 201,
