@@ -1,20 +1,32 @@
+import { Progress } from "@/components/Progress";
+import { Loader2Icon, PackageOpenIcon, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useDropzone } from "react-dropzone";
-import { cn } from "./lib/utils";
-import { PackageOpenIcon, Trash2 } from "lucide-react";
+import { toast, Toaster } from "sonner";
 import { Button } from "./components/Button";
+import { cn } from "./lib/utils";
+import { getPresignedURL } from "./services/getPresignedURL";
+import { uploadFile } from "./services/uploadFile";
+
+interface IUpload {
+  file: File;
+  progress: number;
+}
 
 export function App() {
-  const [files, setFiles] = useState<File[]>([]);
+  const [uploads, setUploads] = useState<IUpload[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop: (acceptedFile) => {
-      setFiles((state) => state.concat(acceptedFile));
+    onDrop: (acceptedFiles) => {
+      setUploads((state) =>
+        state.concat(acceptedFiles.map((file) => ({ file, progress: 0 }))),
+      );
     },
   });
 
-  //deletar  sem percorrer todo o array
-  function handleRemoveFile(removingIndex: number) {
-    setFiles((state) => {
+  //deletar  sem percorrer todo o arrayJH
+  function handleRemoveUpload(removingIndex: number) {
+    setUploads((state) => {
       const newState = [...state];
       newState.splice(removingIndex, 1);
 
@@ -22,8 +34,58 @@ export function App() {
     });
   }
 
+  async function handleUpload() {
+    try {
+      setIsLoading(true);
+
+      //gera todas as urls
+      const uploadObjects = await Promise.all(
+        uploads.map(async ({ file }) => ({
+          url: await getPresignedURL(file),
+          file,
+        })),
+      );
+
+      console.log(uploadObjects, `urls`);
+
+      const response = await Promise.allSettled(
+        uploadObjects.map(({ url, file }, index) =>
+          uploadFile(url, file, (progress) => {
+            console.log(url);
+            setUploads((state) => {
+              const newState = [...state];
+              const upload = newState[index];
+
+              newState[index] = {
+                ...upload,
+                progress,
+              };
+
+              return newState;
+            });
+          }),
+        ),
+      );
+
+      response.forEach((response, index) => {
+        if (response.status === "rejected") {
+          const fileWithError = uploads[index].file;
+          console.log(response);
+          console.error(`O upload do arquivo ${fileWithError.name} falhou`);
+        }
+      });
+
+      setUploads([]);
+      toast.success("Uploads realizados com sucesso");
+    } catch {
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
   return (
     <div className="min-h-screen flex justify-center py-20 px-6">
+      <Toaster />
       <div className="w-full max-w-xl">
         <div
           {...getRootProps()}
@@ -40,31 +102,38 @@ export function App() {
           </small>
         </div>
 
-        {files.length > 0 && (
+        {uploads.length > 0 && (
           <div className="mt-10">
             <h2 className="font-medium text-2xl tracking-tight ">
               Arquivos selecionados
             </h2>
 
             <div className="mt-4 space-y-2">
-              {files.map((file, index) => (
-                <div
-                  key={file.name}
-                  className="border flex items-center justify-between p-3 rounded-md"
-                >
-                  <span className="text-sm">{file.name}</span>
+              {uploads.map(({ file, progress }, index) => (
+                <div key={file.name} className="border p-3 rounded-md">
+                  <div className="flex items-center justify-between ">
+                    <span className="text-sm">{file.name}</span>
 
-                  <Button
-                    onClick={() => handleRemoveFile(index)}
-                    variant="destructive"
-                    size="icon"
-                  >
-                    <Trash2 className="size-4" />
-                  </Button>
+                    <Button
+                      onClick={() => handleRemoveUpload(index)}
+                      variant="destructive"
+                      size="icon"
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
+                  </div>
+                  <Progress className="h-2 mt-2" value={progress} />
                 </div>
               ))}
             </div>
-            <Button className="mt-4 w-full">Upload</Button>
+            <Button
+              className="mt-4 w-full flex gap-2"
+              onClick={handleUpload}
+              disabled={isLoading}
+            >
+              {isLoading && <Loader2Icon className="animate-spin size-5" />}
+              Upload
+            </Button>
           </div>
         )}
       </div>
